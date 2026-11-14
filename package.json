@@ -1,15 +1,19 @@
 {
   "name": "xiaoxin-site",
   "version": "1.0.0",
-  "description": "",
+  "description": "xiaoxin.liming-work.com — 3D 地球仪 + 卫星实景",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "postinstall": "node scripts/copy-cesium.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "cesium": "1.147.0",
     "wrangler": "^4.160.0"
-  }
+  },
+  "private": true,
+  "type": "module"
 }
