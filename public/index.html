@@ -92,11 +92,11 @@
     position:fixed;inset:0;z-index:20;background:#03050c;display:none;opacity:0;transition:opacity .45s ease}
   .real.on{display:block}
   .real.vis{opacity:1}
-  .real-view{position:absolute;inset:0}
+  .real-view{position:absolute;inset:0;z-index:0}
   .real-view .cesium-viewer,.real-view .cesium-widget,.real-view canvas{width:100%;height:100%}
   .real-view .cesium-widget-credits{font-size:10.5px;line-height:1.35;color:rgba(255,255,255,.88);text-shadow:0 1px 2px rgba(0,0,0,.8)}
   .real-view .cesium-viewer-bottom{bottom:env(safe-area-inset-bottom);left:8px;right:8px;padding-right:0}
-  .real-bar{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;right:16px;display:flex;align-items:center;gap:12px;pointer-events:none}
+  .real-bar{position:absolute;z-index:3;top:calc(16px + env(safe-area-inset-top));left:16px;right:16px;display:flex;align-items:center;gap:12px;pointer-events:none}
   .real-bar>*{pointer-events:auto}
   .real-back{all:unset;cursor:pointer;flex:none;display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px 0 12px;border-radius:20px;
     font-size:13px;font-weight:500;color:var(--r-ink);background:var(--r-glass);border:1px solid var(--r-line);
@@ -110,7 +110,7 @@
   .real-title span{display:block;font-size:11px;color:var(--r-muted);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .real-hint{margin-left:auto;font-size:11.5px;color:var(--r-muted);padding:8px 14px;border-radius:16px;background:var(--r-glass);border:1px solid var(--r-line);
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);white-space:nowrap;transition:opacity .8s}
-  .real-loading{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;transition:opacity .6s}
+  .real-loading{position:absolute;z-index:2;inset:0;display:grid;place-items:center;pointer-events:none;transition:opacity .6s}
   .real-loading.hide{opacity:0}
   .real-loading span{font-size:13px;letter-spacing:.12em;color:rgba(232,238,252,.8);padding:10px 18px;border-radius:18px;
     background:rgba(10,14,28,.55);border:1px solid rgba(160,190,255,.16);animation:breathe 2.4s ease-in-out infinite}
