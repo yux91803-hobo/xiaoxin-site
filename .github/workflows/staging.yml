@@ -9,7 +9,7 @@ concurrency:
 jobs:
   staging:
     runs-on: [self-hosted, muse]
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
