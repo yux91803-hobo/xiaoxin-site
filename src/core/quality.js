@@ -9,19 +9,19 @@ export const TIERS = {
     name: 'high', maxPixelRatio: 2, texture: '4k', segments: 160,
     post: true, bloom: { strength: 0.75, radius: 0.5, threshold: 0.88, scale: 0.5 },
     grain: 0.022, aberration: true, cloudShadow: 0.55, stars: 9000, twinkle: 1, milkyWay: true,
-    arcSamples: 150, photorealShadows: true, photorealSSE: 12,
+    arcSamples: 150, photorealSSE: 12,
   },
   medium: {
     name: 'medium', maxPixelRatio: 1.5, texture: '4k', segments: 128,
     post: true, bloom: { strength: 0.65, radius: 0.45, threshold: 0.9, scale: 0.35 },
     grain: 0.018, aberration: false, cloudShadow: 0.45, stars: 5000, twinkle: 1, milkyWay: true,
-    arcSamples: 90, photorealShadows: false, photorealSSE: 16,
+    arcSamples: 90, photorealSSE: 16,
   },
   low: {
     name: 'low', maxPixelRatio: 1, texture: '2k', segments: 96,
     post: false, bloom: null,
     grain: 0, aberration: false, cloudShadow: 0, stars: 2500, twinkle: 0, milkyWay: false,
-    arcSamples: 40, photorealShadows: false, photorealSSE: 24,
+    arcSamples: 40, photorealSSE: 24,
   },
 };
 

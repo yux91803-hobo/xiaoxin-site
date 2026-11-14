@@ -17,6 +17,7 @@ export function createMarkers(places) {
   const group = new THREE.Group();
   const glowTex = glowTexture();
   const ringGeo = new THREE.RingGeometry(0.8, 1, 64);
+  const shockGeo = new THREE.RingGeometry(0.93, 1, 96);   // thinner: it grows much larger than the pulse ring
   const hitGeo = new THREE.SphereGeometry(0.045, 8, 8);
   const hitMat = new THREE.MeshBasicMaterial({ visible: false });
   const add = (o) => { o.material.depthWrite = false; return o; };
@@ -28,9 +29,9 @@ export function createMarkers(places) {
     glow.scale.setScalar(0.11); glow.position.z = 0.006; g.add(glow);
     const core = new THREE.Mesh(new THREE.SphereGeometry(0.0085, 16, 16), new THREE.MeshBasicMaterial({ color: col.clone().lerp(new THREE.Color(0xffffff), 0.5).multiplyScalar(2.2) }));
     core.position.z = 0.004; g.add(core);
-    const mk = () => add(new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(1.4), transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })));
+    const mk = (geo = ringGeo) => add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(1.4), transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })));
     const ring = mk(); ring.position.z = 0.002; ring.scale.setScalar(0.02); g.add(ring);
-    const shock = mk(); shock.position.z = 0.003; shock.scale.setScalar(0.001); shock.material.opacity = 0; g.add(shock);
+    const shock = mk(shockGeo); shock.position.z = 0.003; shock.scale.setScalar(0.001); shock.material.opacity = 0; g.add(shock);
     const beam = add(new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0035, 0.09, 8, 1, true),
       new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(1.5), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending })));
     beam.rotation.x = Math.PI / 2; beam.position.z = 0.045; g.add(beam);
@@ -64,7 +65,7 @@ export function createMarkers(places) {
           m.shockT += dt / 1.3;
           const k = Math.min(1, m.shockT), e = 1 - Math.pow(1 - k, 3);
           m.shock.scale.setScalar(0.01 + e * 0.16);
-          m.shock.material.opacity = (1 - k) * 0.9 * vis;
+          m.shock.material.opacity = Math.pow(1 - k, 1.5) * 0.85 * vis;
           if (k >= 1) m.shockT = -1;
         }
       }

@@ -10,7 +10,7 @@ const CESIUM_BASE = '/vendor/cesium/';
 const GOOGLE_3D_TILES_ASSET = 2275207;
 const FIRST_TILE_TIMEOUT_MS = 30000;   // nothing rendered by then → treat as unreachable
 const ORBIT_RAD_PER_S = 0.045;         // gentle auto-orbit until the user touches the view
-const SUN_ELEVATION_DEG = 32;          // afternoon sun this high: readable shadows without dusk darkness
+const SUN_ELEVATION_DEG = 32;          // afternoon sun this high: warm, readable light without dusk darkness
 
 const MSG = {
   'no-token': '卫星实景还没配置好，先带你回到地球仪。',
@@ -106,7 +106,7 @@ async function ensureTileset(){
       enableCollision: true,              // keep the camera above the buildings
       cacheBytes: 768 * 1024 * 1024, maximumCacheOverflowBytes: 512 * 1024 * 1024,
       maximumScreenSpaceError: (tier && tier.photorealSSE) || (matchMedia('(max-width:760px)').matches ? 20 : 16),
-      shadows: Cesium.ShadowMode.ENABLED,
+      shadows: Cesium.ShadowMode.DISABLED,  // tiles have baked shadows (see lightFor)
     });
   } catch (e) { throw new RealError(looksLikeQuota(e && (e.statusCode || e.message)) ? 'quota' : 'tiles', e); }
   tileset.tileLoad.addEventListener(() => { tilesLoaded++; });
@@ -121,7 +121,8 @@ async function ensureTileset(){
 // Afternoon light for today's date at this place: the local solar time at which the sun stands
 // SUN_ELEVATION_DEG high (or ~80% of its noon height in a high-latitude winter), so every place
 // gets warm, readable light instead of a dusk that depends on the season.
-// Soft shadows only on the high tier (shadow maps are the expensive part).
+// No real-time shadow maps: Google's photorealistic tiles already carry baked-in shadows, and
+// Cesium's shadow map on them produced acne/moire stripes on roofs and water (checked on staging).
 export function afternoonSolarHour(latDeg, date = new Date()){
   const r = Math.PI / 180, phi = latDeg * r, dec = subsolarPoint(date).lat * r;
   const noonEl = 90 - Math.abs(latDeg - dec / r);
@@ -135,12 +136,7 @@ function lightFor(pl){
   const hour = afternoonSolarHour(pl.view.lat, d);
   const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + (hour - pl.view.lon / 15) * 3600000);
   viewer.clock.currentTime = C.JulianDate.fromDate(utc);
-  const hi = !!(tier && tier.photorealShadows);
-  viewer.shadows = hi;
-  if (hi) {
-    const sm = viewer.scene.shadowMap;
-    sm.softShadows = true; sm.size = 2048; sm.darkness = 0.3; sm.maximumDistance = 3000;
-  }
+  viewer.shadows = false;
 }
 
 /* ---------- camera ---------- */
