@@ -260,8 +260,11 @@ let frames = 0;
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
-  if (paused) return;      // photoreal view is on top: don't spend GPU on the hidden globe
-  const now = performance.now(), t = clock.elapsedTime, s = store.get();
+  const now = performance.now();
+  // photoreal view is on top: don't spend GPU on the hidden globe, but keep the transition
+  // tweens running — the CSS flash that fades in the photoreal view is driven from here
+  if (paused) { fxCtl.update(now); return; }
+  const t = clock.elapsedTime, s = store.get();
   quality.sample(dt);
   rig.update(dt, now);
   earth.update(dt, t, reducedMotion ? CLOUD_SPEED * 0.3 : CLOUD_SPEED);

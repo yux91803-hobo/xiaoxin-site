@@ -74,6 +74,14 @@ test('page renders on every quality tier without console errors', { skip, timeou
       await page.waitForFunction(() => document.getElementById('card').classList.contains('show'), null, { timeout: 30000 });
       const f0 = await page.evaluate(() => __xx.frames);
       await page.waitForFunction((n) => __xx.frames > n + 2, f0, { timeout: 60000 });
+      if (tier === 'low') {
+        // dive transition round trip: locally /config.json has no token, so photoreal fails and the
+        // app must pull back out to the globe, clear the flash overlay and explain why in a toast
+        await page.click('#cardReal');
+        await page.waitForFunction(() => __xx.store.get().mode !== 'globe', null, { timeout: 30000 });
+        await page.waitForFunction(() => __xx.store.get().mode === 'globe' && getComputedStyle(document.getElementById('flash')).opacity === '0', null, { timeout: 120000 });
+        assert.match(await page.textContent('#toast'), /回到地球仪/);
+      }
       assert.deepEqual(errors, [], `${tier}: ${errors.join(' | ')}`);
       await ctx.close();
     }
