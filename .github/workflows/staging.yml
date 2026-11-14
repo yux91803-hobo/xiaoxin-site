@@ -13,6 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
+      - run: npm run build
       - run: npm test
       - id: deploy
         run: |
@@ -36,12 +37,19 @@ jobs:
           url="${{ steps.deploy.outputs.url }}"
           test -n "$url"
           for i in 1 2 3 4 5 6; do curl -fsS "$url/" -o page.html && break; sleep 5; done
-          grep -q 'vendor/three.module.js' page.html
-          curl -fsS -o /dev/null "$url/vendor/three.module.js"
-          curl -fsS -o /dev/null "$url/textures/earth-blue-marble.jpg"
+          live=""
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS -H 'Cache-Control: no-cache' "$url/version.json" | grep -q "\"commit\":\"$GITHUB_SHA\""; then live=1; break; fi
+            sleep 5
+          done
+          test -n "$live" || { echo "::error::staging version.json is not commit $GITHUB_SHA"; exit 1; }
+          curl -fsS "$url/" -o page.html
           grep -q 'id="scene"' page.html
           grep -q 'id="cardReal"' page.html
-          curl -fsS -o /dev/null "$url/photoreal.js"
+          grep -q 'name="xiaoxin-version" content="v3"' page.html
+          for a in $(grep -oE '/assets/[A-Za-z0-9_.-]+\.(js|css)' page.html | sort -u); do curl -fsS -o /dev/null "$url$a"; done
+          curl -fsS -o /dev/null "$url/textures/earth-day-2k.webp"
+          curl -fsS -o /dev/null "$url/textures/earth-clouds-4k.webp"
           curl -fsS -o /dev/null "$url/vendor/cesium/Cesium.js"
           curl -fsS -o /dev/null "$url/vendor/cesium/Widgets/widgets.css"
           curl -fsS -o /dev/null "$url/vendor/cesium/Workers/decodeDraco.js"

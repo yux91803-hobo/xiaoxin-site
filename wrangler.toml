@@ -4,10 +4,10 @@ compatibility_date = "2026-11-01"
 workers_dev = false
 routes = [ { pattern = "xiaoxin.liming-work.com", custom_domain = true } ]
 
-# Static files (page, three.js, CesiumJS, earth textures) are served from ./public
+# Static files are served from ./dist: the Vite build of index.html + src/ (three.js bundled) plus public/ (textures, CesiumJS)
 # /config.json goes to index.js (Cesium ion token from the Worker secret CESIUM_ION_TOKEN)
 [assets]
-directory = "./public"
+directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/config.json"]
@@ -19,7 +19,7 @@ workers_dev = true
 routes = []
 
 [env.staging.assets]
-directory = "./public"
+directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/config.json"]
