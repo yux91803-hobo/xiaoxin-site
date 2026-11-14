@@ -123,9 +123,9 @@
 <div class="loader" id="loader"><span id="loaderText">Loading Earth</span></div>
 <script>
   // surface failures instead of hanging on the loader
-  function showFatal(msg){var l=document.getElementById("loader"),t=document.getElementById("loaderText");if(!l||!t)return;l.classList.remove("done");t.style.animation="none";t.style.letterSpacing=".08em";t.style.textTransform="none";t.style.fontSize="14px";t.style.color="rgba(232,238,252,.75)";t.style.textAlign="center";t.style.padding="0 24px";t.textContent=msg;}
-  window.addEventListener("error",function(e){if(!window.__globeReady)showFatal("地球加载出错了，请刷新重试。");});
-  setTimeout(function(){if(!window.__globeStarted)showFatal("地球没能启动，可能是浏览器不支持 WebGL 或网络较慢，请刷新重试。");},15000);
+  function showFatal(msg){window.__fatal=true;var l=document.getElementById("loader"),t=document.getElementById("loaderText");if(!l||!t)return;l.classList.remove("done");t.style.animation="none";t.style.letterSpacing=".08em";t.style.textTransform="none";t.style.fontSize="14px";t.style.color="rgba(232,238,252,.75)";t.style.textAlign="center";t.style.padding="0 24px";t.textContent=msg;}
+  window.addEventListener("error",function(e){if(!window.__globeReady&&!window.__fatal)showFatal("地球加载出错了，请刷新重试。");});
+  setTimeout(function(){if(!window.__globeStarted&&!window.__fatal)showFatal("地球没能启动，可能是浏览器不支持 WebGL 或网络较慢，请刷新重试。");},15000);
 </script>
 
 <script type="module">
@@ -425,6 +425,9 @@ function onResize(){
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h); camera.aspect = w / h;
   camera.fov = w < 760 ? 52 : 42;   // a bit wider on phones so the globe fits
+  // keep the globe centred in the space the side panel leaves free (desktop) / above the bottom bar (phone)
+  if (w >= 760) camera.setViewOffset(w, h, 150, 0, w, h);
+  else camera.setViewOffset(w, h, 0, 40, w, h);
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', onResize); onResize();
