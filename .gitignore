@@ -1,5 +1,7 @@
 node_modules/
 .wrangler/
 .dev.vars
+# Vite build output (npm run build), deployed by both workflows
+dist/
 # copied from node_modules/cesium on npm ci (scripts/copy-cesium.mjs)
 public/vendor/cesium/

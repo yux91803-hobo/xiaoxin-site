@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Xiaoxin · 地球</title>
+<meta name="description" content="电影感 3D 地球：真实昼夜与城市灯光、流动的云层、航线光轨，点击光点飞往世界各地，还能俯冲进卫星实景看看街上的房子。">
+<meta name="theme-color" content="#02040a">
+<meta name="xiaoxin-version" content="v3">
+<link rel="preload" as="image" href="/textures/earth-day-2k.webp" type="image/webp" crossorigin="anonymous">
+</head>
+<body>
+<canvas id="scene" tabindex="0" aria-label="3D 地球仪，可拖动旋转"></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<div class="brand"><h1>Xiaoxin</h1><p>看看这个世界</p></div>
+
+<div class="ctrl" role="toolbar" aria-label="视图控制">
+  <button id="btnSpin" type="button" aria-pressed="true" title="自动旋转">自转</button>
+  <button id="btnReset" type="button" title="回到全景">全景</button>
+  <button id="btnReal" type="button" title="俯冲进卫星实景，看看街上的房子">实景</button>
+  <button id="btnQuality" type="button" title="画质：自动 / 高 / 中 / 低" aria-live="polite">画质</button>
+</div>
+
+<nav class="panel" aria-label="精选地点"><header>精选地点</header><ul id="list"></ul></nav>
+
+<section class="card" id="card" aria-live="polite">
+  <button class="x" id="cardClose" type="button" aria-label="关闭">✕</button>
+  <div class="k" id="cardRegion"></div>
+  <h2 id="cardName"></h2>
+  <div class="coord" id="cardCoord"></div>
+  <div class="local" id="cardLocal"></div>
+  <p id="cardDesc"></p>
+  <button class="go" id="cardReal" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21l3-3"/><path d="M7.5 11.5l5 5"/><rect x="9" y="4" width="6" height="6" rx="1" transform="rotate(45 12 7)"/><path d="M4 9.5l3-3M14.5 20l3-3"/></svg>俯冲进卫星实景 · 看看房子</button>
+  <span class="go-sub">真实 3D 街景，可环绕、缩放</span>
+</section>
+
+<section class="real" id="real" aria-label="卫星实景" aria-hidden="true">
+  <div class="real-view" id="realView"></div>
+  <div class="real-loading" id="realLoading"><span>正在加载卫星实景…</span></div>
+  <div class="real-bar">
+    <button class="real-back" id="realBack" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>回到地球</button>
+    <div class="real-title"><b id="realName"></b><span id="realSpot"></span></div>
+    <div class="real-hint" id="realHint">拖动环绕 · 滚轮缩放 · 右键拖动倾斜</div>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="tip" id="tip"></div>
+<div class="hint" id="hint">拖动旋转 · 滚轮缩放 · 点击光点飞过去</div>
+
+<div class="intro" id="intro" aria-hidden="true">
+  <div class="intro-title"><span class="intro-k">Xiaoxin</span><span class="intro-h">看看这个世界</span></div>
+  <button class="intro-skip" id="introSkip" type="button">跳过 ›</button>
+</div>
+<div class="loader" id="loader"><span id="loaderText">Loading Earth</span></div>
+<script>
+  // surface failures instead of hanging on the loader (runs before the module bundle)
+  function showFatal(msg){window.__fatal=true;var l=document.getElementById("loader"),t=document.getElementById("loaderText");if(!l||!t)return;l.classList.remove("done");t.style.animation="none";t.style.letterSpacing=".08em";t.style.textTransform="none";t.style.fontSize="14px";t.style.color="rgba(232,238,252,.75)";t.style.textAlign="center";t.style.padding="0 24px";t.textContent=msg;}
+  window.addEventListener("error",function(e){if(!window.__globeReady&&!window.__fatal)showFatal("地球加载出错了，请刷新重试。");});
+  setTimeout(function(){if(!window.__globeStarted&&!window.__fatal)showFatal("地球没能启动，可能是浏览器不支持 WebGL 或网络较慢，请刷新重试。");},15000);
+</script>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

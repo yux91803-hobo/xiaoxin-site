@@ -1,12 +1,16 @@
 // Photoreal mode: CesiumJS + Google Photorealistic 3D Tiles (Cesium ion asset 2275207).
-// Loaded on demand from index.html, so the globe home page never downloads Cesium.
+// A lazy chunk: main.js imports it only when the user dives in, and it in turn loads the
+// self-hosted CesiumJS build from /vendor/cesium/, so the globe home page never downloads Cesium.
 // Pattern follows the CesiumJS Sandcastle "Google Photorealistic 3D Tiles" example
 // (Viewer with globe:false + the photorealistic tileset), with the base layer and
 // geocoder turned off and the ion token fetched from /config.json at runtime.
+import { subsolarPoint } from '../scene/astro.js';
+
 const CESIUM_BASE = '/vendor/cesium/';
 const GOOGLE_3D_TILES_ASSET = 2275207;
 const FIRST_TILE_TIMEOUT_MS = 30000;   // nothing rendered by then → treat as unreachable
 const ORBIT_RAD_PER_S = 0.045;         // gentle auto-orbit until the user touches the view
+const SUN_ELEVATION_DEG = 32;          // afternoon sun this high: warm, readable light without dusk darkness
 
 const MSG = {
   'no-token': '卫星实景还没配置好，先带你回到地球仪。',
@@ -19,7 +23,8 @@ class RealError extends Error { constructor(code, cause){ super(code); this.code
 
 const $ = (id) => document.getElementById(id);
 const el = { root:$('real'), view:$('realView'), loading:$('realLoading'), back:$('realBack'), name:$('realName'), spot:$('realSpot'), hint:$('realHint') };
-const globe = () => window.__globe;
+let api = null;       // hooks from main.js: pause(), resume(), toast()
+let tier = null;      // quality tier config from main.js
 
 let Cesium = null, cesiumPromise = null, tokenPromise = null;
 let viewer = null, tileset = null;
@@ -71,6 +76,12 @@ function ensureViewer(token){
   } catch (e) { throw new RealError('webgl', e); }
   const scene = viewer.scene;
   scene.skyAtmosphere.show = true;
+  // cinematic lighting: a real sun at a chosen local time, atmosphere lit by it, light haze
+  scene.light = new Cesium.SunLight();
+  if (scene.atmosphere && Cesium.DynamicAtmosphereLightingType) scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SUNLIGHT;
+  scene.fog.enabled = true; scene.fog.density = 2.0e-4; scene.fog.minimumBrightness = 0.06;
+  viewer.clock.shouldAnimate = false;
+  if (scene.postProcessStages && scene.postProcessStages.fxaa) scene.postProcessStages.fxaa.enabled = true;
   const ctl = scene.screenSpaceCameraController;
   ctl.minimumZoomDistance = 40; ctl.maximumZoomDistance = 25000;
   viewer.cesiumWidget.creditContainer.setAttribute('lang', 'en');
@@ -94,7 +105,8 @@ async function ensureTileset(){
       showCreditsOnScreen: true,          // Google + data attributions must be visible
       enableCollision: true,              // keep the camera above the buildings
       cacheBytes: 768 * 1024 * 1024, maximumCacheOverflowBytes: 512 * 1024 * 1024,
-      maximumScreenSpaceError: matchMedia('(max-width:760px)').matches ? 20 : 16,
+      maximumScreenSpaceError: (tier && tier.photorealSSE) || (matchMedia('(max-width:760px)').matches ? 20 : 16),
+      shadows: Cesium.ShadowMode.DISABLED,  // tiles have baked shadows (see lightFor)
     });
   } catch (e) { throw new RealError(looksLikeQuota(e && (e.statusCode || e.message)) ? 'quota' : 'tiles', e); }
   tileset.tileLoad.addEventListener(() => { tilesLoaded++; });
@@ -103,6 +115,28 @@ async function ensureTileset(){
     if (active && tilesLoaded === 0 && (tilesFailed >= 4 || looksLikeQuota(lastFailure))) fail(new RealError(looksLikeQuota(lastFailure) ? 'quota' : 'tiles'));
   });
   viewer.scene.primitives.add(tileset);
+}
+
+/* ---------- lighting ---------- */
+// Afternoon light for today's date at this place: the local solar time at which the sun stands
+// SUN_ELEVATION_DEG high (or ~80% of its noon height in a high-latitude winter), so every place
+// gets warm, readable light instead of a dusk that depends on the season.
+// No real-time shadow maps: Google's photorealistic tiles already carry baked-in shadows, and
+// Cesium's shadow map on them produced acne/moire stripes on roofs and water (checked on staging).
+export function afternoonSolarHour(latDeg, date = new Date()){
+  const r = Math.PI / 180, phi = latDeg * r, dec = subsolarPoint(date).lat * r;
+  const noonEl = 90 - Math.abs(latDeg - dec / r);
+  const target = Math.min(SUN_ELEVATION_DEG, Math.max(5, noonEl * 0.8)) * r;
+  const cosH = (Math.sin(target) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+  const H = Math.acos(Math.min(1, Math.max(-1, cosH))) / r;   // hour angle, degrees
+  return 12 + H / 15;
+}
+function lightFor(pl){
+  const C = Cesium, d = new Date();
+  const hour = afternoonSolarHour(pl.view.lat, d);
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + (hour - pl.view.lon / 15) * 3600000);
+  viewer.clock.currentTime = C.JulianDate.fromDate(utc);
+  viewer.shadows = false;
 }
 
 /* ---------- camera ---------- */
@@ -115,7 +149,7 @@ function flyToPlace(pl, mySession){
   // start high above the place, then dive in like a satellite zoom
   viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(v.lon, v.lat, 2.5e6) });
   viewer.camera.flyToBoundingSphere(new C.BoundingSphere(target, 0), {
-    offset, duration: 3.2, easingFunction: C.EasingFunction.QUADRATIC_IN_OUT,
+    offset, duration: 2.8, easingFunction: C.EasingFunction.QUADRATIC_IN_OUT,
     complete: () => {
       if (!active || mySession !== session) return;
       viewer.camera.lookAt(target, offset);   // orbit/zoom now pivot around the landmark
@@ -136,6 +170,8 @@ function hide(){
 
 export async function openPhotoreal(pl, opts = {}){
   if (active) return;
+  api = opts.api || api || { pause(){}, resume(){}, toast(m){ console.warn(m); } };
+  tier = opts.tier || tier;
   if (!pl || !pl.view) throw new Error('place has no view');
   active = true; place = pl; const mySession = ++session;
   tilesLoaded = 0; tilesFailed = 0; lastFailure = '';
@@ -147,7 +183,7 @@ export async function openPhotoreal(pl, opts = {}){
   if (opts.deepLink) history.replaceState({ real: pl.id }, '', `#${pl.id}/3d`);
   else { history.pushState({ real: pl.id }, '', `#${pl.id}/3d`); pushed = true; }
   show();
-  globe().pause();
+  api.pause();
   try {
     const [C, token] = await Promise.all([loadCesium(), loadToken()]);
     Cesium = C;
@@ -157,6 +193,7 @@ export async function openPhotoreal(pl, opts = {}){
     viewer.resize();
     await ensureTileset();
     if (!active || mySession !== session) return;
+    lightFor(pl);
     flyToPlace(pl, mySession);
     clearTimeout(watchdog);
     const waitFirst = () => {
@@ -177,7 +214,7 @@ function fail(e){
   const code = e instanceof RealError ? e.code : 'tiles';
   if (code === 'quota' || code === 'tiles') { if (tileset && tilesLoaded === 0) { viewer.scene.primitives.remove(tileset); tileset = null; } }
   close();
-  globe().toast(MSG[code] || MSG.tiles, 8000);
+  api.toast(MSG[code] || MSG.tiles, 8000);
 }
 
 function close({ fromPop = false } = {}){
@@ -189,7 +226,7 @@ function close({ fromPop = false } = {}){
     if (pushed) { pushed = false; history.back(); }
     else history.replaceState(null, '', place ? `#${place.id}` : location.pathname);
   } else pushed = false;
-  globe().resume();
+  api.resume();
 }
 
 el.back.addEventListener('click', () => close());
@@ -197,4 +234,4 @@ window.addEventListener('popstate', () => { if (active) close({ fromPop: true })
 window.addEventListener('keydown', (e) => { if (active && e.key === 'Escape') close(); });
 
 // exposed for the smoke checks in test/ and for debugging
-window.__photoreal = { get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; } };
+window.__photoreal = { get viewer(){ return viewer; }, get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; } };
