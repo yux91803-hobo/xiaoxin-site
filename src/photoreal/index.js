@@ -36,7 +36,7 @@ let active = false, session = 0, pushed = false, place = null;
 let orbit = false, orbitArmed = false, removeTick = null, watchdog = 0;
 let tilesLoaded = 0, tilesFailed = 0, lastFailure = '';
 let cfg = photorealSettings('medium');   // per-open settings for this tier + device (see settings.js)
-let landed = false, openedAt = 0, contextLost = false, reloadTimer = 0, hideProgressTimer = 0;
+let landed = false, phaseStart = 0, contextLost = false, reloadTimer = 0, hideProgressTimer = 0;
 const progress = createLoadProgress();
 
 function deviceSignals(){
@@ -102,7 +102,9 @@ function ensureViewer(token){
   // iOS WebKit drops the WebGL context under memory pressure; Cesium can't recover from that,
   // so tell the user and go back to the globe (a fresh viewer is built on the next visit)
   scene.canvas.addEventListener('webglcontextlost', onContextLost, false);
-  scene.renderError.addEventListener((_s, err) => { console.warn('photoreal render error:', err); handleBrokenViewer('render'); });
+  // a lost context usually surfaces first as a render error (shader compile fails) before the
+  // webglcontextlost event arrives, so check the context to show the right message
+  scene.renderError.addEventListener((_s, err) => { console.warn('photoreal render error:', err); handleBrokenViewer(glLost() ? 'context-lost' : 'render'); });
   const ctl = scene.screenSpaceCameraController;
   ctl.minimumZoomDistance = 40; ctl.maximumZoomDistance = 25000;
   viewer.cesiumWidget.creditContainer.setAttribute('lang', 'en');
@@ -120,6 +122,9 @@ function applyViewerSettings(){
   viewer.resolutionScale = cfg.viewer.resolutionScale;
   const pp = viewer.scene.postProcessStages;
   if (pp && pp.fxaa) pp.fxaa.enabled = cfg.viewer.fxaa;
+}
+function glLost(){
+  try { const gl = viewer && viewer.scene.context._gl; return !!(gl && gl.isContextLost()); } catch { return false; }
 }
 function onContextLost(e){
   if (e && e.preventDefault) e.preventDefault();
@@ -172,7 +177,7 @@ async function ensureTileset(){
 
 /* ---------- loading progress 「正在加载高清实景 xx%」 ---------- */
 function setProgress(pct){
-  const slow = !progress.complete && performance.now() - openedAt > cfg.slowLoadingHintMs;
+  const slow = !progress.complete && performance.now() - phaseStart > cfg.slowLoadingHintMs;
   el.progressText.textContent = `${slow ? '网络较慢，' : ''}正在加载高清实景 ${pct}%`;
   el.progressBar.style.transform = `scaleX(${pct / 100})`;
 }
@@ -191,13 +196,15 @@ function hideProgress(delay = 0){
 function onLoadProgress(pending, processing){
   if (!active) return;
   if (progress.complete) {
-    // later loading (the user moved the camera): only show the pill if it takes a while
-    if (pending + processing > 0 && !reloadTimer) {
+    // later loading after the user moved the camera: show the pill again only if it takes a
+    // while (the slow auto-orbit streams in small bits all the time; that never shows it)
+    if (pending + processing > 0 && !orbit && !reloadTimer) {
       reloadTimer = setTimeout(() => {
         reloadTimer = 0;
-        if (!active || !tileset || tileset.tilesLoaded) return;
-        progress.reset(); setProgress(0); showProgress();
-      }, 1200);
+        if (!active || orbit || !tileset || tileset.tilesLoaded) return;
+        progress.reset(); phaseStart = performance.now();
+        setProgress(progress.update(pending, processing)); showProgress();
+      }, 1500);
     }
     return;
   }
@@ -276,7 +283,7 @@ export async function openPhotoreal(pl, opts = {}){
   active = true; place = pl; const mySession = ++session;
   tilesLoaded = 0; tilesFailed = 0; lastFailure = '';
   cfg = photorealSettings((tier && tier.name) || 'medium', deviceSignals());
-  landed = false; orbitArmed = false; openedAt = performance.now();
+  landed = false; orbitArmed = false; phaseStart = performance.now();
   progress.reset(); setProgress(0); el.progress.hidden = true; el.progress.classList.remove('on');
   clearTimeout(reloadTimer); reloadTimer = 0; clearTimeout(hideProgressTimer);
   el.name.textContent = `${pl.name} · 卫星实景`;
