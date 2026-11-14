@@ -77,6 +77,7 @@ test('12 places, each with a photoreal viewpoint and time zone; routes connect k
   assert.equal(PLACES.length, 12);
   for (const p of PLACES) {
     assert.ok(p.view && Number.isFinite(p.view.lat) && Number.isFinite(p.view.range), `${p.id} view`);
+    assert.ok(typeof p.tz === 'string' && p.tz.includes('/'), `${p.id} needs an IANA tz (else the card shows the viewer's own clock)`);
     assert.doesNotThrow(() => new Intl.DateTimeFormat('zh-CN', { timeZone: p.tz }), `${p.id} tz`);
   }
   const ids = new Set(PLACES.map((p) => p.id));
