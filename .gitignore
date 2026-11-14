@@ -1,2 +1,5 @@
 node_modules/
 .wrangler/
+.dev.vars
+# copied from node_modules/cesium on npm ci (scripts/copy-cesium.mjs)
+public/vendor/cesium/
