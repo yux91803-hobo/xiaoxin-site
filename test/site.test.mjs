@@ -45,6 +45,8 @@ test('home page keeps the three.js globe and lazy-loads photoreal mode', () => {
     assert.ok(html.includes(needle), `index.html should contain ${needle}`);
   }
   assert.ok(!/vendor\/cesium/.test(html), 'Cesium must not be loaded by the home page itself');
+  // .real-bar is pointer-events:none and `all:unset` would inherit it, so the back button must opt back in
+  assert.match(html, /\.real-back\{all:unset;pointer-events:auto;/);
   const ids = html.match(/\{ id:'[a-z]+'/g) || [];
   const views = html.match(/view:\{ lat:-?\d/g) || [];
   assert.equal(ids.length, 12);
