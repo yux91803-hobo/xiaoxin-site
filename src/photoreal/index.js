@@ -4,11 +4,13 @@
 // Pattern follows the CesiumJS Sandcastle "Google Photorealistic 3D Tiles" example
 // (Viewer with globe:false + the photorealistic tileset), with the base layer and
 // geocoder turned off and the ion token fetched from /config.json at runtime.
+import { subsolarPoint } from '../scene/astro.js';
+
 const CESIUM_BASE = '/vendor/cesium/';
 const GOOGLE_3D_TILES_ASSET = 2275207;
 const FIRST_TILE_TIMEOUT_MS = 30000;   // nothing rendered by then → treat as unreachable
 const ORBIT_RAD_PER_S = 0.045;         // gentle auto-orbit until the user touches the view
-const LOCAL_SOLAR_HOUR = 16.5;         // late-afternoon sun: long, readable shadows and warm light
+const SUN_ELEVATION_DEG = 32;          // afternoon sun this high: readable shadows without dusk darkness
 
 const MSG = {
   'no-token': '卫星实景还没配置好，先带你回到地球仪。',
@@ -116,17 +118,28 @@ async function ensureTileset(){
 }
 
 /* ---------- lighting ---------- */
-// Put the sun where it would be at LOCAL_SOLAR_HOUR (local mean solar time) today at this place,
-// and turn on soft shadows on the high tier only (shadow maps are the expensive part).
+// Afternoon light for today's date at this place: the local solar time at which the sun stands
+// SUN_ELEVATION_DEG high (or ~80% of its noon height in a high-latitude winter), so every place
+// gets warm, readable light instead of a dusk that depends on the season.
+// Soft shadows only on the high tier (shadow maps are the expensive part).
+export function afternoonSolarHour(latDeg, date = new Date()){
+  const r = Math.PI / 180, phi = latDeg * r, dec = subsolarPoint(date).lat * r;
+  const noonEl = 90 - Math.abs(latDeg - dec / r);
+  const target = Math.min(SUN_ELEVATION_DEG, Math.max(5, noonEl * 0.8)) * r;
+  const cosH = (Math.sin(target) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+  const H = Math.acos(Math.min(1, Math.max(-1, cosH))) / r;   // hour angle, degrees
+  return 12 + H / 15;
+}
 function lightFor(pl){
   const C = Cesium, d = new Date();
-  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + (LOCAL_SOLAR_HOUR - pl.view.lon / 15) * 3600000);
+  const hour = afternoonSolarHour(pl.view.lat, d);
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + (hour - pl.view.lon / 15) * 3600000);
   viewer.clock.currentTime = C.JulianDate.fromDate(utc);
   const hi = !!(tier && tier.photorealShadows);
   viewer.shadows = hi;
   if (hi) {
     const sm = viewer.scene.shadowMap;
-    sm.softShadows = true; sm.size = 2048; sm.darkness = 0.38; sm.maximumDistance = 4000;
+    sm.softShadows = true; sm.size = 2048; sm.darkness = 0.3; sm.maximumDistance = 3000;
   }
 }
 
@@ -225,4 +238,4 @@ window.addEventListener('popstate', () => { if (active) close({ fromPop: true })
 window.addEventListener('keydown', (e) => { if (active && e.key === 'Escape') close(); });
 
 // exposed for the smoke checks in test/ and for debugging
-window.__photoreal = { get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; } };
+window.__photoreal = { get viewer(){ return viewer; }, get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; } };
