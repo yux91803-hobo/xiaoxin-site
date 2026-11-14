@@ -1,11 +1,11 @@
 name: staging
 on:
-  push:
-    branches-ignore: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 concurrency:
-  group: staging
-  cancel-in-progress: true
+  group: staging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 jobs:
   staging:
     runs-on: [self-hosted, muse]
