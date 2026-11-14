@@ -3,3 +3,8 @@ main = "index.js"
 compatibility_date = "2026-11-01"
 workers_dev = false
 routes = [ { pattern = "xiaoxin.liming-work.com", custom_domain = true } ]
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
