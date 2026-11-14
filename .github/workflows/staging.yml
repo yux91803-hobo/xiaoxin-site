@@ -27,6 +27,8 @@ jobs:
           url="${{ steps.deploy.outputs.url }}"
           test -n "$url"
           for i in 1 2 3 4 5 6; do curl -fsS "$url/" -o page.html && break; sleep 5; done
-          grep -q 'three@0.170.0' page.html
+          grep -q 'vendor/three.module.js' page.html
+          curl -fsS -o /dev/null "$url/vendor/three.module.js"
+          curl -fsS -o /dev/null "$url/textures/earth-blue-marble.jpg"
           grep -q 'id="scene"' page.html
           echo "OK $url"

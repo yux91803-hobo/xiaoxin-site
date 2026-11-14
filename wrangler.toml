@@ -4,13 +4,19 @@ compatibility_date = "2026-11-01"
 workers_dev = false
 routes = [ { pattern = "xiaoxin.liming-work.com", custom_domain = true } ]
 
-[[rules]]
-type = "Text"
-globs = ["**/*.html"]
-fallthrough = true
+# Static files (page, three.js, earth textures) are served from ./public
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 # Staging: separate Worker on workers.dev, no custom domain. Deployed from non-main branches.
 [env.staging]
 name = "xiaoxin-site-staging"
 workers_dev = true
 routes = []
+
+[env.staging.assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"

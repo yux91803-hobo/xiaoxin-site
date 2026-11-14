@@ -1,16 +1,7 @@
-import html from "./public/index.html";
-
-const headers = {
-  "content-type": "text/html; charset=utf-8",
-  "cache-control": "public, max-age=300",
-  "x-content-type-options": "nosniff",
-  "referrer-policy": "strict-origin-when-cross-origin",
-};
-
+// Static files in ./public are served by Workers Static Assets before this runs.
+// Anything else falls through to the asset handler (SPA fallback to index.html).
 export default {
-  async fetch(request) {
-    const { pathname } = new URL(request.url);
-    if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
-    return new Response(html, { headers });
+  async fetch(request, env) {
+    return env.ASSETS.fetch(request);
   },
 };

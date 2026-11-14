@@ -6,7 +6,6 @@
 <title>Xiaoxin · 地球</title>
 <meta name="description" content="可旋转的 3D 地球仪，点击发光标记飞往世界各地。">
 <meta name="theme-color" content="#03050c">
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
   :root{
     --bg:#03050c; --ink:#e8eefc; --muted:rgba(232,238,252,.62); --faint:rgba(232,238,252,.32);
@@ -93,8 +92,8 @@
 </style>
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  "three": "/vendor/three.module.js",
+  "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js"
 } }
 </script>
 </head>
@@ -121,13 +120,19 @@
 
 <div class="tip" id="tip"></div>
 <div class="hint" id="hint">拖动旋转 · 滚轮缩放 · 点击光点飞过去</div>
-<div class="loader" id="loader"><span>Loading Earth</span></div>
+<div class="loader" id="loader"><span id="loaderText">Loading Earth</span></div>
+<script>
+  // surface failures instead of hanging on the loader
+  function showFatal(msg){var l=document.getElementById("loader"),t=document.getElementById("loaderText");if(!l||!t)return;l.classList.remove("done");t.style.animation="none";t.style.letterSpacing=".08em";t.style.textTransform="none";t.style.fontSize="14px";t.style.color="rgba(232,238,252,.75)";t.style.textAlign="center";t.style.padding="0 24px";t.textContent=msg;}
+  window.addEventListener("error",function(e){if(!window.__globeReady)showFatal("地球加载出错了，请刷新重试。");});
+  setTimeout(function(){if(!window.__globeStarted)showFatal("地球没能启动，可能是浏览器不支持 WebGL 或网络较慢，请刷新重试。");},15000);
+</script>
 
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const TEX = 'https://cdn.jsdelivr.net/npm/three-globe@2.41.12/example/img/';
+const TEX = '/textures/';
 const R = 1;                     // globe radius
 const HOME_DIST = 3.2;           // default camera distance
 const FOCUS_DIST = 2.15;         // distance when focused on a place
@@ -148,9 +153,22 @@ const PLACES = [
   { id:'machu',     name:'马丘比丘',   region:'秘鲁',     lat:-13.1631,lon:-72.5450, color:'#a6ff7a', desc:'安第斯山脊上的印加古城，清晨云雾散开时最动人。' },
 ];
 
+/* ---------- list (built first so the UI works even if WebGL fails) ---------- */
+const listEl = document.getElementById('list');
+PLACES.forEach((pl, i) => {
+  const li = document.createElement('li');
+  li.innerHTML = `<button data-i="${i}"><span class="dot" style="--c:${pl.color}"></span><span><div class="pl-name">${pl.name}</div><div class="pl-sub">${pl.region} · ${fmt(pl.lat,'N','S')} ${fmt(pl.lon,'E','W')}</div></span></button>`;
+  li.querySelector('button').addEventListener('click', () => select(i));
+  listEl.appendChild(li);
+});
+function fmt(v, p, n){ return `${Math.abs(v).toFixed(2)}°${v >= 0 ? p : n}`; }
+
 /* ---------- renderer / scene ---------- */
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' }); }
+catch (err) { showFatal('你的浏览器或设备暂不支持 WebGL，无法显示 3D 地球。'); throw err; }
+window.__globeStarted = true;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -324,17 +342,9 @@ function stepFlight(now){
 }
 
 /* ---------- selection ---------- */
-const listEl = document.getElementById('list');
 const card = document.getElementById('card');
 let selected = -1;
 
-PLACES.forEach((pl, i) => {
-  const li = document.createElement('li');
-  li.innerHTML = `<button data-i="${i}"><span class="dot" style="--c:${pl.color}"></span><span><div class="pl-name">${pl.name}</div><div class="pl-sub">${pl.region} · ${fmt(pl.lat,'N','S')} ${fmt(pl.lon,'E','W')}</div></span></button>`;
-  li.querySelector('button').addEventListener('click', () => select(i));
-  listEl.appendChild(li);
-});
-function fmt(v, p, n){ return `${Math.abs(v).toFixed(2)}°${v >= 0 ? p : n}`; }
 
 function select(i){
   selected = i;
@@ -481,6 +491,7 @@ function animate(){
 
   camera.position.setLength(7);
   intro.t0 = performance.now();
+  window.__globeReady = true;
   document.getElementById('loader').classList.add('done');
 
   const fromHash = PLACES.findIndex(p => '#' + p.id === location.hash);
