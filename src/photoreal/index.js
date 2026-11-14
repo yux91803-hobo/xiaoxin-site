@@ -5,6 +5,7 @@
 // (Viewer with globe:false + the photorealistic tileset), with the base layer and
 // geocoder turned off and the ion token fetched from /config.json at runtime.
 import { subsolarPoint } from '../scene/astro.js';
+import { photorealSettings, createLoadProgress, isIOS } from './settings.js';
 
 const CESIUM_BASE = '/vendor/cesium/';
 const GOOGLE_3D_TILES_ASSET = 2275207;
@@ -18,19 +19,32 @@ const MSG = {
   'webgl': '你的浏览器或设备暂不支持实景所需的 WebGL，先回到地球仪。',
   'quota': '今天的卫星实景额度用完了，明天再来看看吧。先回到地球仪。',
   'tiles': '暂时连不上卫星实景（可能是网络访问不到 Google，或额度已用完），先回到地球仪看看吧。',
+  'context-lost': '手机内存有点吃紧，系统暂停了高清实景，先带你回到地球仪。可以在「画质」里调低一档再试。',
+  'render': '高清实景渲染出了点问题，先带你回到地球仪，稍后再试试。',
 };
 class RealError extends Error { constructor(code, cause){ super(code); this.code = code; this.cause = cause; } }
 
 const $ = (id) => document.getElementById(id);
-const el = { root:$('real'), view:$('realView'), loading:$('realLoading'), back:$('realBack'), name:$('realName'), spot:$('realSpot'), hint:$('realHint') };
+const el = { root:$('real'), view:$('realView'), loading:$('realLoading'), back:$('realBack'), name:$('realName'), spot:$('realSpot'), hint:$('realHint'),
+  progress:$('realProgress'), progressText:$('realProgressText'), progressBar:$('realProgressBar') };
 let api = null;       // hooks from main.js: pause(), resume(), toast()
 let tier = null;      // quality tier config from main.js
 
 let Cesium = null, cesiumPromise = null, tokenPromise = null;
 let viewer = null, tileset = null;
 let active = false, session = 0, pushed = false, place = null;
-let orbit = false, removeTick = null, watchdog = 0;
+let orbit = false, orbitArmed = false, removeTick = null, watchdog = 0;
 let tilesLoaded = 0, tilesFailed = 0, lastFailure = '';
+let cfg = photorealSettings('medium');   // per-open settings for this tier + device (see settings.js)
+let landed = false, openedAt = 0, contextLost = false, reloadTimer = 0, hideProgressTimer = 0;
+const progress = createLoadProgress();
+
+function deviceSignals(){
+  const coarse = matchMedia('(pointer:coarse)').matches;
+  const screenMax = Math.max(screen.width || 0, screen.height || 0);
+  const ios = isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints || 0);
+  return { ios, mobile: ios || (coarse && screenMax < 1400), dpr: window.devicePixelRatio || 1 };
+}
 
 /* ---------- loading ---------- */
 function loadCesium(){
@@ -63,7 +77,8 @@ const looksLikeQuota = (s) => /\b429\b|quota|rate.?limit|RESOURCE_EXHAUSTED/i.te
 
 function ensureViewer(token){
   Cesium.Ion.defaultAccessToken = token;
-  if (viewer) return;
+  if (viewer) { applyViewerSettings(); return; }
+  contextLost = false;
   try {
     viewer = new Cesium.Viewer(el.view, {
       globe: false,               // the photorealistic tiles already contain the terrain
@@ -71,7 +86,9 @@ function ensureViewer(token){
       homeButton: false, sceneModePicker: false, navigationHelpButton: false,
       animation: false, timeline: false, fullscreenButton: false,
       infoBox: false, selectionIndicator: false,
-      msaaSamples: 1,
+      msaaSamples: cfg.viewer.msaaSamples,
+      useBrowserRecommendedResolution: cfg.viewer.useBrowserRecommendedResolution,  // CSS px, not DPR 3
+      showRenderLoopErrors: false,          // we show our own message and go back to the globe
     });
   } catch (e) { throw new RealError('webgl', e); }
   const scene = viewer.scene;
@@ -81,7 +98,11 @@ function ensureViewer(token){
   if (scene.atmosphere && Cesium.DynamicAtmosphereLightingType) scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SUNLIGHT;
   scene.fog.enabled = true; scene.fog.density = 2.0e-4; scene.fog.minimumBrightness = 0.06;
   viewer.clock.shouldAnimate = false;
-  if (scene.postProcessStages && scene.postProcessStages.fxaa) scene.postProcessStages.fxaa.enabled = true;
+  applyViewerSettings();
+  // iOS WebKit drops the WebGL context under memory pressure; Cesium can't recover from that,
+  // so tell the user and go back to the globe (a fresh viewer is built on the next visit)
+  scene.canvas.addEventListener('webglcontextlost', onContextLost, false);
+  scene.renderError.addEventListener((_s, err) => { console.warn('photoreal render error:', err); handleBrokenViewer('render'); });
   const ctl = scene.screenSpaceCameraController;
   ctl.minimumZoomDistance = 40; ctl.maximumZoomDistance = 25000;
   viewer.cesiumWidget.creditContainer.setAttribute('lang', 'en');
@@ -95,8 +116,39 @@ function ensureViewer(token){
   });
 }
 
+function applyViewerSettings(){
+  viewer.resolutionScale = cfg.viewer.resolutionScale;
+  const pp = viewer.scene.postProcessStages;
+  if (pp && pp.fxaa) pp.fxaa.enabled = cfg.viewer.fxaa;
+}
+function onContextLost(e){
+  if (e && e.preventDefault) e.preventDefault();
+  contextLost = true;
+  console.warn('photoreal: WebGL context lost');
+  handleBrokenViewer('context-lost');
+}
+function handleBrokenViewer(code){
+  if (active) fail(new RealError(code));
+  else setTimeout(() => { if (!active) destroyViewer(); }, 0);
+}
+function destroyViewer(){
+  const v = viewer;
+  viewer = null; tileset = null; orbit = false;
+  if (removeTick) { try { removeTick(); } catch {} removeTick = null; }
+  if (!v) return;
+  try { v.scene.canvas.removeEventListener('webglcontextlost', onContextLost, false); } catch {}
+  try { v.destroy(); } catch (err) { console.warn('photoreal: destroy failed', err); }
+  el.view.textContent = '';
+}
+
+function applyTilesetSettings(){
+  const t = cfg.tileset;
+  tileset.maximumScreenSpaceError = t.maximumScreenSpaceError;
+  tileset.cacheBytes = t.cacheBytes;
+  tileset.maximumCacheOverflowBytes = t.maximumCacheOverflowBytes;
+}
 async function ensureTileset(){
-  if (tileset) return;
+  if (tileset) { applyTilesetSettings(); return; }
   let resource;
   try { resource = await Cesium.IonResource.fromAssetId(GOOGLE_3D_TILES_ASSET); }
   catch (e) { throw new RealError(looksLikeQuota(e && (e.statusCode || e.message)) ? 'quota' : 'tiles', e); }
@@ -104,17 +156,60 @@ async function ensureTileset(){
     tileset = await Cesium.Cesium3DTileset.fromUrl(resource, {
       showCreditsOnScreen: true,          // Google + data attributions must be visible
       enableCollision: true,              // keep the camera above the buildings
-      cacheBytes: 768 * 1024 * 1024, maximumCacheOverflowBytes: 512 * 1024 * 1024,
-      maximumScreenSpaceError: (tier && tier.photorealSSE) || (matchMedia('(max-width:760px)').matches ? 20 : 16),
+      ...cfg.tileset,                     // SSE, cache budget, flight/foveation tuning per tier + device
       shadows: Cesium.ShadowMode.DISABLED,  // tiles have baked shadows (see lightFor)
     });
   } catch (e) { throw new RealError(looksLikeQuota(e && (e.statusCode || e.message)) ? 'quota' : 'tiles', e); }
-  tileset.tileLoad.addEventListener(() => { tilesLoaded++; });
+  tileset.tileLoad.addEventListener(() => { tilesLoaded++; progress.tileDone(); });
+  tileset.loadProgress.addEventListener(onLoadProgress);
+  tileset.allTilesLoaded.addEventListener(onAllTilesLoaded);
   tileset.tileFailed.addEventListener((err) => {
-    tilesFailed++; lastFailure = (err && err.message) || '';
+    tilesFailed++; progress.tileDone(); lastFailure = (err && err.message) || '';
     if (active && tilesLoaded === 0 && (tilesFailed >= 4 || looksLikeQuota(lastFailure))) fail(new RealError(looksLikeQuota(lastFailure) ? 'quota' : 'tiles'));
   });
   viewer.scene.primitives.add(tileset);
+}
+
+/* ---------- loading progress 「正在加载高清实景 xx%」 ---------- */
+function setProgress(pct){
+  const slow = !progress.complete && performance.now() - openedAt > cfg.slowLoadingHintMs;
+  el.progressText.textContent = `${slow ? '网络较慢，' : ''}正在加载高清实景 ${pct}%`;
+  el.progressBar.style.transform = `scaleX(${pct / 100})`;
+}
+function showProgress(){
+  clearTimeout(hideProgressTimer);
+  el.progress.hidden = false;
+  requestAnimationFrame(() => el.progress.classList.add('on'));
+}
+function hideProgress(delay = 0){
+  clearTimeout(hideProgressTimer);
+  hideProgressTimer = setTimeout(() => {
+    el.progress.classList.remove('on');
+    hideProgressTimer = setTimeout(() => { el.progress.hidden = true; }, 400);
+  }, delay);
+}
+function onLoadProgress(pending, processing){
+  if (!active) return;
+  if (progress.complete) {
+    // later loading (the user moved the camera): only show the pill if it takes a while
+    if (pending + processing > 0 && !reloadTimer) {
+      reloadTimer = setTimeout(() => {
+        reloadTimer = 0;
+        if (!active || !tileset || tileset.tilesLoaded) return;
+        progress.reset(); setProgress(0); showProgress();
+      }, 1200);
+    }
+    return;
+  }
+  setProgress(progress.update(pending, processing));
+}
+function onAllTilesLoaded(){
+  if (!active || !landed) return;      // mid-flight "all loaded" is just an intermediate LOD
+  clearTimeout(reloadTimer); reloadTimer = 0;
+  if (!progress.complete) { setProgress(progress.finish()); hideProgress(700); }
+  else hideProgress(0);
+  el.loading.classList.add('hide');
+  if (cfg.orbitAfterLoad && !orbit && orbitArmed) { orbitArmed = false; orbit = { t: 0 }; }
 }
 
 /* ---------- lighting ---------- */
@@ -147,13 +242,18 @@ function flyToPlace(pl, mySession){
   orbit = false;
   viewer.camera.lookAtTransform(C.Matrix4.IDENTITY);
   // start high above the place, then dive in like a satellite zoom
-  viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(v.lon, v.lat, 2.5e6) });
+  // (phones start lower: fewer intermediate LODs fetched and cached on the way down)
+  viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(v.lon, v.lat, v.h + cfg.diveFromHeight) });
   viewer.camera.flyToBoundingSphere(new C.BoundingSphere(target, 0), {
-    offset, duration: 2.8, easingFunction: C.EasingFunction.QUADRATIC_IN_OUT,
+    offset, duration: cfg.diveSeconds, easingFunction: C.EasingFunction.QUADRATIC_IN_OUT,
     complete: () => {
       if (!active || mySession !== session) return;
       viewer.camera.lookAt(target, offset);   // orbit/zoom now pivot around the landmark
-      orbit = { t: 0 };
+      landed = true;
+      // auto-orbit only once the landing view has fully refined: a moving camera defers
+      // foveated/peripheral tiles, which on a phone looked like "it never sharpens"
+      if (cfg.orbitAfterLoad) { orbitArmed = true; if (tileset && tileset.tilesLoaded) onAllTilesLoaded(); }
+      else orbit = { t: 0 };
     },
   });
 }
@@ -175,6 +275,10 @@ export async function openPhotoreal(pl, opts = {}){
   if (!pl || !pl.view) throw new Error('place has no view');
   active = true; place = pl; const mySession = ++session;
   tilesLoaded = 0; tilesFailed = 0; lastFailure = '';
+  cfg = photorealSettings((tier && tier.name) || 'medium', deviceSignals());
+  landed = false; orbitArmed = false; openedAt = performance.now();
+  progress.reset(); setProgress(0); el.progress.hidden = true; el.progress.classList.remove('on');
+  clearTimeout(reloadTimer); reloadTimer = 0; clearTimeout(hideProgressTimer);
   el.name.textContent = `${pl.name} · 卫星实景`;
   el.spot.textContent = pl.spot ? `${pl.spot} · ${pl.region}` : pl.region;
   el.hint.textContent = matchMedia('(pointer:coarse)').matches ? '单指拖动环绕 · 双指缩放' : '拖动环绕 · 滚轮缩放 · 右键拖动倾斜';
@@ -198,7 +302,8 @@ export async function openPhotoreal(pl, opts = {}){
     clearTimeout(watchdog);
     const waitFirst = () => {
       if (!active || mySession !== session) return;
-      if (tilesLoaded > 0) { el.loading.classList.add('hide'); return; }
+      // first tiles are in: swap the full-screen loader for the small 「正在加载高清实景 xx%」 pill
+      if (tilesLoaded > 0) { el.loading.classList.add('hide'); if (!progress.complete) showProgress(); return; }
       watchdog = setTimeout(waitFirst, 400);
     };
     waitFirst();
@@ -212,16 +317,23 @@ function fail(e){
   if (!active) return;
   console.warn('photoreal failed:', e && (e.code || e), e && e.cause);
   const code = e instanceof RealError ? e.code : 'tiles';
-  if (code === 'quota' || code === 'tiles') { if (tileset && tilesLoaded === 0) { viewer.scene.primitives.remove(tileset); tileset = null; } }
+  if (code === 'quota' || code === 'tiles') { if (viewer && tileset && tilesLoaded === 0) { viewer.scene.primitives.remove(tileset); tileset = null; } }
   close();
+  // rebuilt fresh on the next visit; deferred so we never destroy from inside Cesium's render loop
+  if (code === 'context-lost' || code === 'render') setTimeout(() => { if (!active) destroyViewer(); }, 0);
   api.toast(MSG[code] || MSG.tiles, 8000);
 }
 
 function close({ fromPop = false } = {}){
   if (!active) return;
-  active = false; session++; orbit = false; clearTimeout(watchdog);
-  if (viewer) { viewer.camera.cancelFlight(); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY); viewer.useDefaultRenderLoop = false; }
+  active = false; session++; orbit = false; orbitArmed = false; landed = false; clearTimeout(watchdog);
+  clearTimeout(reloadTimer); reloadTimer = 0; hideProgress(0);
+  if (viewer && !contextLost) {
+    try { viewer.camera.cancelFlight(); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY); viewer.useDefaultRenderLoop = false; } catch {}
+  }
   hide();
+  // phones hand the GPU memory back to the globe; desktop keeps the viewer for a quick re-entry
+  if (cfg.destroyViewerOnClose) { const s0 = session; setTimeout(() => { if (!active && session === s0) destroyViewer(); }, 500); }
   if (!fromPop) {
     if (pushed) { pushed = false; history.back(); }
     else history.replaceState(null, '', place ? `#${place.id}` : location.pathname);
@@ -234,4 +346,9 @@ window.addEventListener('popstate', () => { if (active) close({ fromPop: true })
 window.addEventListener('keydown', (e) => { if (active && e.key === 'Escape') close(); });
 
 // exposed for the smoke checks in test/ and for debugging
-window.__photoreal = { get viewer(){ return viewer; }, get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; } };
+window.__photoreal = {
+  get viewer(){ return viewer; }, get active(){ return active; }, get tilesLoaded(){ return tilesLoaded; }, get tilesFailed(){ return tilesFailed; },
+  get settings(){ return cfg; }, get progress(){ return progress.percent; }, get landed(){ return landed; }, get orbiting(){ return !!orbit; },
+  // checks WebGL context-loss handling (WEBGL_lose_context), as iOS does under memory pressure
+  loseContext(){ const gl = viewer && viewer.scene.context._gl; const x = gl && gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); return !!x; },
+};
