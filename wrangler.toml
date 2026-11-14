@@ -8,3 +8,9 @@ routes = [ { pattern = "xiaoxin.liming-work.com", custom_domain = true } ]
 type = "Text"
 globs = ["**/*.html"]
 fallthrough = true
+
+# Staging: separate Worker on workers.dev, no custom domain. Deployed from non-main branches.
+[env.staging]
+name = "xiaoxin-site-staging"
+workers_dev = true
+routes = []
