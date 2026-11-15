@@ -1,6 +1,6 @@
 # xiaoxin-site
 
-xiaoxin.liming-work.com 的源码（Cloudflare Worker + Workers Static Assets）。推送到 main 会自动部署，部署在带 `muse` 标签的自建 runner 上运行；PR 会先部署到测试站 https://xiaoxin-site-staging.liming-work.workers.dev 。
+xiaoxin.liming-work.com 的源码（Cloudflare Worker + Workers Static Assets）。推送到 main 会自动部署，CI 全部在 GitHub 自带的执行机（ubuntu-latest）上运行（仓库公开，不再用自建 runner；fork 来的 PR 不跑部署；wrangler 输出进日志前用 `scripts/ci-redact.mjs` 隐去邮箱；旧日志可在 Actions 手动运行 Clean old logs 清掉）；PR 会先部署到测试站 https://xiaoxin-site-staging.liming-work.workers.dev 。
 不要改主站 liming-work.com，不要把任何密钥写进仓库。
 
 ## v3：电影感地球

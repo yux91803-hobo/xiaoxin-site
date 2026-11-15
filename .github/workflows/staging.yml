@@ -8,16 +8,23 @@ concurrency:
   cancel-in-progress: false
 jobs:
   staging:
-    runs-on: [self-hosted, muse]
+    # 仓库公开：全部在 GitHub 自带的执行机上跑；fork 来的 PR 不跑（拿不到密钥，也不部署）
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
       - run: npm run build
       - run: npm test
       - id: deploy
+        shell: bash
         run: |
-          npx wrangler deploy --env staging 2>&1 | tee deploy.log
+          npx wrangler deploy --env staging 2>&1 | node scripts/ci-redact.mjs | tee deploy.log
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Staging URL: $url" >> "$GITHUB_STEP_SUMMARY"
@@ -25,9 +32,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: set Cesium ion token (Worker secret)
+        shell: bash
         run: |
           test -n "$CESIUM_ION_TOKEN" || { echo "::error::Actions secret CESIUM_ION_TOKEN is missing"; exit 1; }
-          printf '%s' "$CESIUM_ION_TOKEN" | npx wrangler secret put CESIUM_ION_TOKEN --env staging
+          printf '%s' "$CESIUM_ION_TOKEN" | npx wrangler secret put CESIUM_ION_TOKEN --env staging 2>&1 | node scripts/ci-redact.mjs
         env:
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

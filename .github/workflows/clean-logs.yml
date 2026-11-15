@@ -1,0 +1,48 @@
+# 清理旧的 Actions 日志（只删日志，运行记录和结果都留着）。
+# 仓库公开后日志任何人都能看；以前在自托管执行机（Muse）上跑的日志会带执行机信息，wrangler 的输出也可能带账号邮箱（现在都先隐去再进日志）。
+# 只能在 Actions 页手动运行，要填 before：删这个时间以前开始、已经结束的运行的日志。
+name: Clean old logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      before:
+        description: 删这个时间以前开始的运行的日志（例：2026-11-15T06:00:00Z）
+        required: true
+        type: string
+
+permissions:
+  actions: write
+
+concurrency:
+  group: clean-logs
+  cancel-in-progress: false
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const before = Date.parse(context.payload.inputs?.before || '');
+            if (!Number.isFinite(before)) throw new Error('before 要填时间，例如 2026-11-15T06:00:00Z');
+            const { owner, repo } = context.repo;
+            // GitHub 对接连的删改请求有次数限制：删一个歇一会儿
+            const pause = Number(process.env.CLEAN_PAUSE_MS ?? 800);
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, { owner, repo, per_page: 100 });
+            let deleted = 0, gone = 0, failed = 0;
+            for (const run of runs) {
+              if (run.id === context.runId || run.status !== 'completed' || Date.parse(run.created_at) >= before) continue;
+              try {
+                await github.rest.actions.deleteWorkflowRunLogs({ owner, repo, run_id: run.id });
+                deleted++;
+                if (pause > 0) await new Promise(resolve => setTimeout(resolve, pause));
+              } catch (e) {
+                if (e.status === 404 || e.status === 410) gone++;   // 日志早就过期或删过了
+                else { failed++; core.warning(`运行 ${run.id} 的日志没删掉：${e.status || ''} ${e.message}`); }
+              }
+            }
+            core.info(`删了 ${deleted} 个运行的日志；${gone} 个本来就没有日志；${failed} 个没删掉`);
+            if (failed) core.setFailed(`${failed} 个运行的日志没删掉，可以再运行一次`);
