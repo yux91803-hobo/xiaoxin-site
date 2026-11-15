@@ -51,10 +51,11 @@ test('wrangler.toml: /config.json runs the Worker first; routes unchanged; asset
   assert.equal((toml.match(/directory = "\.\/dist"/g) || []).length, 2, 'both envs serve ./dist');
 });
 
-test('workflows build before testing and deploying; runners unchanged', () => {
+test('workflows build before testing and deploying; GitHub-hosted runners', () => {
   for (const f of ['deploy.yml', 'staging.yml']) {
     const y = read(`.github/workflows/${f}`);
-    assert.match(y, /runs-on: \[self-hosted, muse\]/, `${f} runs-on`);
+    assert.match(y, /runs-on: ubuntu-latest/, `${f} runs-on`);
+    assert.doesNotMatch(y, /self-hosted/, `${f}: no self-hosted runner (public repo)`);
     const ci = y.indexOf('npm ci'), build = y.indexOf('npm run build'), t = y.indexOf('npm test'), dep = y.indexOf('wrangler deploy');
     assert.ok(ci >= 0 && build > ci && t > build && dep > t, `${f}: npm ci → npm run build → npm test → wrangler deploy`);
   }
